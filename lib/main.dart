@@ -6,10 +6,12 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_nearby_connections/flutter_nearby_connections.dart';
 import 'package:device_info/device_info.dart';
+import 'package:flutter_pdfview/flutter_pdfview.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:video_player/video_player.dart';
 
 Future<void> main() async {
   runApp(MyApp());
@@ -106,6 +108,15 @@ class _DevicesListScreenState extends State<DevicesListScreen> {
   List<Device> connectedDevices = [];
   File? _image;
   String? filePath;
+  String? fileType;
+  String? base64PDF;
+  String? compressedBase64PDF;
+  int? originalFileSize;
+  int? compressedFileSize;
+  int? originalBase64Size;
+  int? compressedBase64Size;
+  String reassembledBase64YYYYYY = "";
+  String? base64String;
 
   @override
   void initState() {
@@ -131,6 +142,15 @@ class _DevicesListScreenState extends State<DevicesListScreen> {
     } else {
       return devices.length;
     }
+  }
+
+  @override
+  void dispose() {
+    subscription.cancel();
+    receivedDataSubscription.cancel();
+    nearbyService.stopBrowsingForPeers();
+    nearbyService.stopAdvertisingPeer();
+    super.dispose();
   }
 
   @override
@@ -256,40 +276,133 @@ class _DevicesListScreenState extends State<DevicesListScreen> {
             .toList());
       });
     });
-
     receivedDataSubscription =
         nearbyService.dataReceivedSubscription(callback: (data) async {
       print("dataReceivedSubscription: ${jsonEncode(data)}");
       String data2 = data['message'];
-      Uint8List bytes = base64Decode(data2.split(' ')[1]);
-      log('kkkkkkkkkkkkkkkkkkkkkk');
-      log('${data2.split(' ')[1]}');
-      log('$bytes');
+      if (data['message'].split('-')[0] == 'end') {
+        final file =
+            await base64ToFile(reassembledBase64YYYYYY, 'temp_video.mp4');
+        Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (context) => CheckTypeFile(
+                      baseFile: reassembledBase64YYYYYY,
+                      typeFile: data['message'].split('-')[1],
+                      file: file,
+                    )));
+        await base64ToFile(reassembledBase64YYYYYY, _fileName);
+      }
+      log('data2${data2.split(' ')[1]}');
+
+      // تجميع الأجزاء باستخدام Base64Reassembler
+      Base64Reassembler reassembler = Base64Reassembler();
+
+      reassembler.addChunk(data2.split(' ')[1]);
+
+      // الحصول على السلسلة المجتمعة
+      String reassembledBase64 = reassembler.getReassembledBase64();
+      // تهيئة سلسلة لتجميع القيم الجديدة
+
+      // مثال على إضافة سلسلة جديدة إلى السلسلة المجتمعة
+      reassembledBase64YYYYYY = reassembledBase64YYYYYY + reassembledBase64;
+      print(
+          'Reassembled base64 is equal to original: ${reassembledBase64.length}');
+      log('reassembledBase64YYYYYY:');
+      log('reassembledBase64YYYYYY: ${reassembledBase64YYYYYY.length}');
+    });
+  }
+
+  _onTabItemListener(Device device) async {
+    if (device.state == SessionState.connected) {
       showDialog(
         context: context,
         builder: (BuildContext context) {
           return AlertDialog(
-            content: Container(
-              color: Colors.red,
-              width: double.infinity,
-              child: Image.memory(
-                bytes,
-                fit: BoxFit.contain,
-              ),
+            title: Text("Send File"),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text("Choose File Type..."),
+                TextButton(
+                  child: Text("Image"),
+                  onPressed: () {
+                    setState(() {
+                      fileType = 'image';
+                    });
+                    Navigator.of(context).pop();
+                  },
+                ),
+                TextButton(
+                  child: Text("Video"),
+                  onPressed: () {
+                    setState(() {
+                      fileType = 'video';
+                    });
+                    Navigator.of(context).pop();
+                  },
+                ),
+                TextButton(
+                  child: Text("PDF"),
+                  onPressed: () {
+                    setState(() {
+                      fileType = 'pdf';
+                    });
+                    Navigator.of(context).pop();
+                  },
+                ),
+              ],
             ),
             actions: [
               TextButton(
+                child: Text("Cancel"),
                 onPressed: () {
-                  saveImage(bytes, data2.split(' ')[0]);
+                  Navigator.of(context).pop();
                 },
-                child: Text('Close'),
               ),
             ],
           );
         },
       );
-      saveImage(bytes, data2.split(' ')[0]);
-    });
+      await _getFile(fileType: fileType ?? ''); // Select an image
+      final image = _image;
+      if (image != null) {
+        // Uint8List resizedImageBytes = await _resizeImage(_image!);
+        //
+        // String base64Image = base64Encode(resizedImageBytes);
+        log('base64Imageyyyyyyyyyyyyyyyyyyyy');
+        //    log(base64Image.length.toString());
+        List<int> pdfBytes = await image.readAsBytes();
+
+        // Get original file size
+        originalFileSize = pdfBytes.length;
+
+        // Convert to Base64
+        base64String = base64Encode(pdfBytes);
+        splitBase64String(base64String ?? '', 32720, device).then((value) {
+          nearbyService.sendMessage(device.deviceId, 'end-$fileType');
+          log('All chunks sent, including the end signal');
+        });
+      }
+    }
+  }
+
+  Future<void> splitBase64String(
+      String base64String, int chunkSize, Device device) async {
+    int length = base64String.length;
+    List<String> chunks = [];
+    log('qqqqqqqqqqqqqqqqqqq$length');
+    for (int i = 0; i < length; i += chunkSize) {
+      int end = (i + chunkSize < length) ? i + chunkSize : length;
+      chunks.add(base64String.substring(i, end));
+    }
+
+    // عرض عدد الأجزاء وطول كل جزء
+    for (int i = 0; i < chunks.length; i++) {
+      print('Chunk ${i + 1}: ${chunks[i].length}');
+      nearbyService.sendMessage(device.deviceId, '$_fileName ${chunks[i]}');
+    }
+    log('ffffffffffffffffffffffffffffffffff');
   }
 
   void saveImage(Uint8List bytes, String fileName) async {
@@ -302,6 +415,13 @@ class _DevicesListScreenState extends State<DevicesListScreen> {
     } catch (e) {
       print('Error saving image: $e');
     }
+  }
+
+  Future<File> base64ToFile(String base64String, String fileName) async {
+    final decodedBytes = base64Decode(base64String);
+    final directory = await getExternalStorageDirectory();
+    final file = File('${directory!.path}/$fileName');
+    return file.writeAsBytes(decodedBytes);
   }
 
   String getStateName(SessionState state) {
@@ -362,43 +482,12 @@ class _DevicesListScreenState extends State<DevicesListScreen> {
     }
   }
 
-  _onTabItemListener(Device device) async {
-    if (device.state == SessionState.connected) {
-      await _getFile(fileType: 'image'); // Select an image
-      if (_image != null) {
-        Uint8List resizedImageBytes = await _resizeImage(_image!);
-
-        String base64Image = base64Encode(resizedImageBytes);
-        log('base64Imageyyyyyyyyyyyyyyyyyyyy');
-        log(base64Image.length.toString());
-        showDialog(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: Text("Send image"),
-              content: Text("Sending image..."),
-              actions: [
-                TextButton(
-                  child: Text("Cancel"),
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                  },
-                ),
-              ],
-            );
-          },
-        );
-        nearbyService.sendMessage(device.deviceId, '$_fileName $base64Image');
-      }
-    }
-  }
-
   Future<void> _getFile({required String fileType}) async {
     switch (fileType) {
       case 'video':
         setState(() {
-          filePath =
-              '/data/data/com.example.p2p/files/facebook_1715581311783.mp4';
+          filePath = '/data/data/com.example.p2p/files/30seconds.mp4';
+          // '/data/data/com.example.p2p/files/facebook_1715581311783.mp4';
           _image = File(filePath ?? '');
         });
         break;
@@ -412,7 +501,8 @@ class _DevicesListScreenState extends State<DevicesListScreen> {
       case 'pdf':
         setState(() {
           filePath =
-              '/data/data/com.example.p2p/files/Flutter Requirements and Installation Guide.pdf';
+              '/data/data/com.example.p2p/files/FlutterInstallationGuide.pdf';
+          // '/data/data/com.example.p2p/files/Flutter Requirements and Installation Guide.pdf';
 
           _image = File(filePath ?? '');
         });
@@ -420,6 +510,39 @@ class _DevicesListScreenState extends State<DevicesListScreen> {
     }
     await _saveValue(path.basename(filePath ?? ''));
   }
+
+  // void _getPage({required String? fileType}) async {
+  //   Future<dynamic>? value;
+  //   switch (fileType) {
+  //     case 'video':
+  //       final file =
+  //           await base64ToFile(reassembledBase64YYYYYY, 'temp_video.mp4');
+  //       value = Navigator.push(
+  //           context,
+  //           MaterialPageRoute(
+  //               builder: (context) => VideoPlayerScreen(
+  //                     file: file,
+  //                   )));
+  //       break;
+  //     case 'image':
+  //       value = Navigator.push(
+  //           context,
+  //           MaterialPageRoute(
+  //               builder: (context) => TestImageFile(
+  //                     imageFile: reassembledBase64YYYYYY,
+  //                   )));
+  //       break;
+  //     case 'pdf':
+  //       value = Navigator.push(
+  //           context,
+  //           MaterialPageRoute(
+  //               builder: (context) => TestPdfFile(
+  //                     pdfFile: reassembledBase64YYYYYY,
+  //                   )));
+  //       break;
+  //   }
+  //   return value;
+  // }
 
   Future<Uint8List> _resizeImage(File fileInfo) async {
     final file = img.decodeImage(await fileInfo.readAsBytes());
@@ -433,5 +556,140 @@ class _DevicesListScreenState extends State<DevicesListScreen> {
     setState(() {
       _fileName = value;
     });
+  }
+}
+
+class Base64Reassembler {
+  StringBuffer _buffer = StringBuffer();
+
+  void addChunk(String chunk) {
+    _buffer.write(chunk);
+  }
+
+  String getReassembledBase64() {
+    return _buffer.toString();
+  }
+}
+
+class TestPdfFile extends StatelessWidget {
+  const TestPdfFile({super.key, required this.pdfFile});
+
+  final String pdfFile;
+
+  @override
+  Widget build(BuildContext context) {
+    return PDFView(
+      pdfData: Uint8List.fromList(base64Decode(pdfFile)),
+    );
+  }
+}
+
+class TestImageFile extends StatelessWidget {
+  const TestImageFile({super.key, required this.imageFile});
+
+  final String imageFile;
+
+  @override
+  Widget build(BuildContext context) {
+    Uint8List bytes = base64Decode(imageFile);
+    return SizedBox(
+      width: double.infinity,
+      child: Image.memory(
+        bytes,
+        fit: BoxFit.contain,
+      ),
+    );
+  }
+}
+
+class CheckTypeFile extends StatelessWidget {
+  const CheckTypeFile(
+      {super.key,
+      required this.typeFile,
+      required this.baseFile,
+      required this.file});
+
+  final String typeFile;
+  final String baseFile;
+  final File file;
+
+  @override
+  Widget build(BuildContext context) {
+    return typeFile == 'pdf'
+        ? TestPdfFile(
+            pdfFile: baseFile,
+          )
+        : typeFile == 'image'
+            ? TestImageFile(
+                imageFile: baseFile,
+              )
+            : VideoPlayerScreen(
+                file: file,
+              );
+  }
+}
+
+class VideoPlayerScreen extends StatefulWidget {
+  final File file;
+
+  VideoPlayerScreen({required this.file});
+
+  @override
+  _VideoPlayerScreenState createState() => _VideoPlayerScreenState();
+}
+
+class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
+  late VideoPlayerController _controller;
+  late Future<void> _initializeVideoPlayerFuture;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _controller = VideoPlayerController.file(widget.file);
+    _initializeVideoPlayerFuture = _controller.initialize();
+    _controller.setLooping(true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Video Player'),
+      ),
+      body: Center(
+        child: FutureBuilder(
+          future: _initializeVideoPlayerFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.done) {
+              return AspectRatio(
+                aspectRatio: _controller.value.aspectRatio,
+                child: VideoPlayer(_controller),
+              );
+            } else {
+              return CircularProgressIndicator();
+            }
+          },
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          setState(() {
+            _controller.value.isPlaying
+                ? _controller.pause()
+                : _controller.play();
+          });
+        },
+        child: Icon(
+          _controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
+        ),
+      ),
+    );
   }
 }
