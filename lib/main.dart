@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:convert';
-import 'dart:developer';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_nearby_connections/flutter_nearby_connections.dart';
@@ -115,7 +114,7 @@ class _DevicesListScreenState extends State<DevicesListScreen> {
   int? compressedFileSize;
   int? originalBase64Size;
   int? compressedBase64Size;
-  String reassembledBase64YYYYYY = "";
+  String assemblingPartsBase64 = "";
   String? base64String;
 
   @override
@@ -282,34 +281,26 @@ class _DevicesListScreenState extends State<DevicesListScreen> {
       String data2 = data['message'];
       if (data['message'].split('-')[0] == 'end') {
         final file =
-            await base64ToFile(reassembledBase64YYYYYY, 'temp_video.mp4');
+            await base64ToFile(assemblingPartsBase64, 'temp_video.mp4');
         Navigator.push(
             context,
             MaterialPageRoute(
                 builder: (context) => CheckTypeFile(
-                      baseFile: reassembledBase64YYYYYY,
+                      baseFile: assemblingPartsBase64,
                       typeFile: data['message'].split('-')[1],
                       file: file,
                     )));
-        await base64ToFile(reassembledBase64YYYYYY, _fileName);
+        await base64ToFile(assemblingPartsBase64, _fileName);
       }
-      log('data2${data2.split(' ')[1]}');
-
       // تجميع الأجزاء باستخدام Base64Reassembler
       Base64Reassembler reassembler = Base64Reassembler();
-
       reassembler.addChunk(data2.split(' ')[1]);
-
       // الحصول على السلسلة المجتمعة
       String reassembledBase64 = reassembler.getReassembledBase64();
       // تهيئة سلسلة لتجميع القيم الجديدة
 
       // مثال على إضافة سلسلة جديدة إلى السلسلة المجتمعة
-      reassembledBase64YYYYYY = reassembledBase64YYYYYY + reassembledBase64;
-      print(
-          'Reassembled base64 is equal to original: ${reassembledBase64.length}');
-      log('reassembledBase64YYYYYY:');
-      log('reassembledBase64YYYYYY: ${reassembledBase64YYYYYY.length}');
+      assemblingPartsBase64 = assemblingPartsBase64 + reassembledBase64;
     });
   }
 
@@ -367,21 +358,14 @@ class _DevicesListScreenState extends State<DevicesListScreen> {
       await _getFile(fileType: fileType ?? ''); // Select an image
       final image = _image;
       if (image != null) {
-        // Uint8List resizedImageBytes = await _resizeImage(_image!);
-        //
-        // String base64Image = base64Encode(resizedImageBytes);
-        log('base64Imageyyyyyyyyyyyyyyyyyyyy');
-        //    log(base64Image.length.toString());
         List<int> pdfBytes = await image.readAsBytes();
-
-        // Get original file size
         originalFileSize = pdfBytes.length;
 
         // Convert to Base64
         base64String = base64Encode(pdfBytes);
         splitBase64String(base64String ?? '', 32720, device).then((value) {
           nearbyService.sendMessage(device.deviceId, 'end-$fileType');
-          log('All chunks sent, including the end signal');
+          print('All chunks sent, including the end signal');
         });
       }
     }
@@ -391,7 +375,6 @@ class _DevicesListScreenState extends State<DevicesListScreen> {
       String base64String, int chunkSize, Device device) async {
     int length = base64String.length;
     List<String> chunks = [];
-    log('qqqqqqqqqqqqqqqqqqq$length');
     for (int i = 0; i < length; i += chunkSize) {
       int end = (i + chunkSize < length) ? i + chunkSize : length;
       chunks.add(base64String.substring(i, end));
@@ -402,7 +385,6 @@ class _DevicesListScreenState extends State<DevicesListScreen> {
       print('Chunk ${i + 1}: ${chunks[i].length}');
       nearbyService.sendMessage(device.deviceId, '$_fileName ${chunks[i]}');
     }
-    log('ffffffffffffffffffffffffffffffffff');
   }
 
   void saveImage(Uint8List bytes, String fileName) async {
@@ -511,45 +493,6 @@ class _DevicesListScreenState extends State<DevicesListScreen> {
     await _saveValue(path.basename(filePath ?? ''));
   }
 
-  // void _getPage({required String? fileType}) async {
-  //   Future<dynamic>? value;
-  //   switch (fileType) {
-  //     case 'video':
-  //       final file =
-  //           await base64ToFile(reassembledBase64YYYYYY, 'temp_video.mp4');
-  //       value = Navigator.push(
-  //           context,
-  //           MaterialPageRoute(
-  //               builder: (context) => VideoPlayerScreen(
-  //                     file: file,
-  //                   )));
-  //       break;
-  //     case 'image':
-  //       value = Navigator.push(
-  //           context,
-  //           MaterialPageRoute(
-  //               builder: (context) => TestImageFile(
-  //                     imageFile: reassembledBase64YYYYYY,
-  //                   )));
-  //       break;
-  //     case 'pdf':
-  //       value = Navigator.push(
-  //           context,
-  //           MaterialPageRoute(
-  //               builder: (context) => TestPdfFile(
-  //                     pdfFile: reassembledBase64YYYYYY,
-  //                   )));
-  //       break;
-  //   }
-  //   return value;
-  // }
-
-  Future<Uint8List> _resizeImage(File fileInfo) async {
-    final file = img.decodeImage(await fileInfo.readAsBytes());
-    final resizedImage =
-        img.copyResize(file!, width: 300); // Adjust width as needed
-    return Uint8List.fromList(img.encodePng(resizedImage));
-  }
 
   Future<void> _saveValue(String value) async {
     await _prefs?.setString('myValue', value);
