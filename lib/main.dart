@@ -11,8 +11,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(MyApp());
 }
 
@@ -35,9 +37,53 @@ Route<dynamic> generateRoute(RouteSettings settings) {
   }
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  @override
+  void initState() {
+    super.initState();
+    requestPermissions();
+  }
+  void requestPermissions() async {
+    // Request multiple permissions at once
+    Map<Permission, PermissionStatus> statuses = await [
+      Permission.bluetooth,
+      Permission.bluetoothScan,
+      Permission.bluetoothConnect,
+      Permission.location,
+      Permission.locationAlways,
+      Permission.locationWhenInUse,
+    ].request();
+
+    // Check the status of each permission
+    if (statuses[Permission.camera]?.isGranted?? false) {
+      print('Camera permission granted');
+    } else {
+      print('Camera permission denied');
+    }
+
+    if (statuses[Permission.location]?.isGranted?? false) {
+      print('Location permission granted');
+    } else {
+      print('Location permission denied');
+    }
+
+    if (statuses[Permission.storage]?.isGranted?? false) {
+      print('Storage permission granted');
+    } else {
+      print('Storage permission denied');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+
+
+
     return MaterialApp(
       onGenerateRoute: generateRoute,
       debugShowCheckedModeBanner: false,

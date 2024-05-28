@@ -58,6 +58,7 @@ dependencies:
   flutter_lzma: ^1.0.0
   pdf_render: ^1.1.0
   flutter_nearby_connections: ^1.1.1
+  permission_handler: ^9.2.0
 
 dev_dependencies:
   flutter_test:
